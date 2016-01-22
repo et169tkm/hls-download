@@ -1,12 +1,15 @@
+import os
 import pycurl
 import sys
 import StringIO
+import time
 import urlparse
 
 def main(argv):
     if len(argv) < 2:
         printlog("Please specify url")
     else:
+        name = 'now100'
         url = argv[1]
         d = Download(url)
         d.perform()
@@ -16,52 +19,81 @@ def main(argv):
 
         #printlog(d.get_body())
 
-        streams = AdaptiveListStream.parseList(d.get_body(), d.get_base_url(d.get_effective_url()))
-# testing
-        print "==================== adaptive list"
-        print d.get_body()
-        print "===================="
-        for stream in streams:
-            print stream.bandwidth
-            print stream.url
-        print "===================="
+        adaptive_list_file = d.get_body()
+        streams = AdaptiveListStream.parseList(adaptive_list_file, d.get_base_url(d.get_effective_url()))
+        print "=================== adaptive list"
+        print adaptive_list_file
+        print "==================="
         if (streams != None):
-            print streams[3].url
+            highest_stream = None
+            for stream in streams:
+                print "stream bandwidth: %s" % stream.bandwidth
+                print "stream url: %s" % stream.url
+                if highest_stream == None or stream.bandwidth > highest_stream.bandwidth:
+                    highest_stream = stream
 
-            d = Download(streams[3].url)
-            d.perform()
-            p = PlayList.parse(d.get_body(), d.get_base_url(d.get_effective_url()))
-            print "==================== play list"
-            print d.get_body()
-            print "===================="
-            print p.encryption_method
-            print p.key_url
-            
-            if (p.key_url != None):
-                d = Download(p.key_url, 'key')
-                d.curl.setopt(pycurl.VERBOSE , 1)
-                print "going to download key"
+            # start downloading
+            should_save_adaptive_list = True
+            while True:
+                d = Download(highest_stream.url)
                 d.perform()
-                print "finished download key"
+                playlist_file = d.get_body()
+                if d.response_status != 200:
+                    break
+                playlist_download_time = time.time()
+                p = PlayList.parse(playlist_file, d.get_base_url(d.get_effective_url()))
+                print "=================== playlist"
+                print playlist_file
+                print "==================="
+                print "Encryption method: %s" % p.encryption_method
+                print "Encryption key url: %s" % p.key_url
+    
+                # save adaptive list
+                adaptive_list_file_path = '%s-%d-adaptive.m3u8' % (name, p.sequence_id)
+                if should_save_adaptive_list:
+                    should_save_adaptive_list = False
+                    f = open(adaptive_list_file_path, 'w+')
+                    f.write(adaptive_list_file)
+                    f.close()
+                # save play list
+                f = open('%s-%d-playlist.m3u8' % (name, p.sequence_id), 'w+')
+                f.write(playlist_file)
                 f.close()
-            for segment in p.segments:
-                print segment.interval
-                print segment.url
-                break
-                d = Download(segment.url, 'segment.ts')
-                d.curl.setopt(pycurl.VERBOSE , 1)
-                #d.curl.setopt(pycurl.WRITEDATA, f)
-                d.perform()
-                print 'segment file length: %s' % len(d.get_body())
-                f.close()
-                break
+                
+                if (p.key_url != None):
+                    d = Download(p.key_url, "%s-%d.key" % (name, p.sequence_id))
+                    print "going to download key"
+                    d.perform()
+                    print "finished download key"
+                    d.close()
+                for segment in p.segments:
+                    print "Segment duration: %d" % segment.duration
+                    print "segment url: %s" % segment.url
+                    segment_filename = '%s-%d.ts' % (name, segment.sequence_id)
+                    if os.path.isfile(segment_filename):
+                        printlog("file exist, skip downloading: %s" % segment_filename)
+                    else:
+                        d = Download(segment.url, segment_filename)
+                        d.perform()
+                        d.close()
+
+                next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
+                now = time.time()
+                if (next_playlist_download_time - now> 0):
+                    printlog("sleep: %d" % (next_playlist_download_time - now))
+                    time.sleep(next_playlist_download_time - now)
+                else:
+                    printlog("now is already > next playlist time, go on")
+                    printlog("now               : %d" % now)
+                    printlog("next playlist time: %d" % next_playlist_download_time)
 
 def printlog(message):
-    sys.stderr.write(message + "\n")
+    sys.stdout.write(message + "\n")
 
 class PlayListSegment:
-    def __init__(self, interval, url):
-        self.interval = interval
+    def __init__(self, sequence_id, duration, url):
+        self.sequence_id = sequence_id
+        self.duration = duration
         self.url = url
 
 class PlayList:
@@ -70,6 +102,7 @@ class PlayList:
         self.key = None
         self.key_url = None
         self.encryption_method = None
+        self.sequence_id = None
         
     @staticmethod
     def parse(playlist_file, base_url):
@@ -77,22 +110,24 @@ class PlayList:
         lines = playlist_file.splitlines(False)
         key_info = None
         if lines[0] == "#EXTM3U":
-            segment_interval = None
+            segment_duration = None
+            sequence_id_offset = 0
             for i in range(len(lines)):
 
                 if lines[i] != "":
                     if not lines[i].startswith("#"):
                     
                         url = "%s/%s" % (base_url, lines[i])
-                        playlist.segments.append(PlayListSegment(segment_interval, url))
+                        playlist.segments.append(PlayListSegment(playlist.sequence_id + sequence_id_offset, segment_duration, url))
+                        sequence_id_offset = sequence_id_offset + 1
     
                         # if this is a url, clear the stored states
-                        segment_interval = None
+                        segment_duration = None
                     elif lines[i].startswith("#EXTINF:"):
-                        elements = lines[i].split(',')
+                        elements = lines[i][len("#EXTINF:"):].split(',')
                         if (len(elements) >= 1):
-                            # assume the first item is the interval
-                            segment_interval = elements[0]
+                            # assume the first item is the duration
+                            segment_duration = int(elements[0])
                     elif lines[i].startswith("#EXT-X-KEY:"):
                         elements = lines[i][len("#EXT-X-KEY:"):].split(",")
                         for element in elements:
@@ -105,6 +140,8 @@ class PlayList:
                             elif key == "URI":
                                 # download the key
                                 playlist.key_url = value
+                    elif lines[i].startswith("#EXT-X-MEDIA-SEQUENCE:"):
+                        playlist.sequence_id = int(lines[i][len("#EXT-X-MEDIA-SEQUENCE:"):])
                     else:
                         print lines[i]
         if len(playlist.segments) > 0:
@@ -112,7 +149,11 @@ class PlayList:
         else:
             return None
 
-        
+    def get_total_duration(self):
+        total_duration = 0
+        for segment in self.segments:
+            total_duration = total_duration + segment.duration
+        return total_duration
 
 class AdaptiveListStream:
     def __init__(self, info, url):
@@ -127,7 +168,7 @@ class AdaptiveListStream:
             for e in array[1].split(','):
                 subarray = e.split('=', 1)
                 if len(subarray) == 2 and subarray[0] == 'BANDWIDTH':
-                    self.bandwidth = subarray[1]
+                    self.bandwidth = int(subarray[1])
 
     @staticmethod
     def parseList(adaptive_list, base_url):
@@ -146,11 +187,11 @@ class AdaptiveListStream:
 class Download:
     def __init__(self, url, filename = None):
         self.url = url
-        self.body_buffer = StringIO.StringIO()
         self.response_body = None
         self.curl = self.gen_curl(url, filename)
         self.method = "GET"
         self.filename = filename
+        self.response_status = 0
 
     def gen_curl(self, url, filename = None):
         c = pycurl.Curl()
@@ -174,18 +215,22 @@ class Download:
         f = None
         if self.method == "POST":
             self.curl.setopt(c.POST, 1)
+
         if (self.filename != None):
             f = open(self.filename, 'wb+')
             self.curl.setopt(pycurl.WRITEDATA, f)
         else:
-            self.curl.setopt(pycurl.WRITEFUNCTION, self.body_buffer.write)
+            body_buffer = StringIO.StringIO()
+            self.curl.setopt(pycurl.WRITEFUNCTION, body_buffer.write)
+
         self.curl.perform()
+        self.response_status = self.curl.getinfo(pycurl.HTTP_CODE)
 
-
-        if f != None:
-            close(f)
+        if self.filename != None:
+            if f != None:
+                f.close()
         else:
-            self.response_body = self.body_buffer.getvalue()
+            self.response_body = body_buffer.getvalue()
     def close(self):
         self.curl.close()
 
