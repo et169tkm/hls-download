@@ -139,7 +139,10 @@ class PlayList:
                                 playlist.encryption_method = value
                             elif key == "URI":
                                 # download the key
-                                playlist.key_url = value
+                                if value.startswith("http://") or value.startswith("https://"):
+                                    playlist.key_url = value
+                                else:
+                                    playlist.key_url = "%s/%s" % (base_url, value)
                     elif lines[i].startswith("#EXT-X-MEDIA-SEQUENCE:"):
                         playlist.sequence_id = int(lines[i][len("#EXT-X-MEDIA-SEQUENCE:"):])
                     else:
