@@ -1,7 +1,9 @@
+import binascii
 import os
 import pycurl
 import sys
 import StringIO
+import subprocess
 import time
 import urlparse
 
@@ -9,6 +11,7 @@ def main(argv):
     if len(argv) < 2:
         printlog("Please specify url")
     else:
+        key_cache = KeyCache()
         name = 'now100'
         url = argv[1]
         d = Download(url)
@@ -45,8 +48,6 @@ def main(argv):
                 print "=================== playlist"
                 print playlist_file
                 print "==================="
-                print "Encryption method: %s" % p.encryption_method
-                print "Encryption key url: %s" % p.key_url
     
                 # save adaptive list
                 adaptive_list_file_path = '%s-%d-adaptive.m3u8' % (name, p.sequence_id)
@@ -60,22 +61,40 @@ def main(argv):
                 f.write(playlist_file)
                 f.close()
                 
-                if (p.key_url != None):
-                    d = Download(p.key_url, "%s-%d.key" % (name, p.sequence_id))
-                    print "going to download key"
-                    d.perform()
-                    print "finished download key"
-                    d.close()
                 for segment in p.segments:
+                    if (segment.key_url != None and key_cache.get(segment.key_url) == None):
+                        d = Download(segment.key_url)
+                        print "going to download key"
+                        d.perform()
+                        print "finished download key"
+                        key = d.get_body()
+                        d.close()
+
+                        key_file = open("%s-%d.key" % (name, segment.sequence_id), "wb")
+                        key_file.write(key)
+                        key_file.close()
+
+                        key_cache.set(segment.key_url, binascii.hexlify(key))
+                        
+
                     print "Segment duration: %d" % segment.duration
                     print "segment url: %s" % segment.url
-                    segment_filename = '%s-%d.ts' % (name, segment.sequence_id)
+                    segment_filename = '%s-%d.ts%s' % (name, segment.sequence_id, (".enc" if segment.encryption_method != None else ""))
                     if os.path.isfile(segment_filename):
                         printlog("file exist, skip downloading: %s" % segment_filename)
                     else:
                         d = Download(segment.url, segment_filename)
                         d.perform()
                         d.close()
+
+                        if segment.encryption_method == "AES-128":
+                            command = ["openssl", "aes-128-cbc", "-d",
+                                    "-K", key_cache.get(segment.key_url),
+                                    "-iv", "%032x" % segment.sequence_id,
+                                    "-in", segment_filename,
+                                    "-out", "%s-%d.ts" % (name, segment.sequence_id)]
+                            subprocess.call(command)
+                            
 
                 next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
                 now = time.time()
@@ -90,18 +109,28 @@ def main(argv):
 def printlog(message):
     sys.stdout.write(message + "\n")
 
+class KeyCache:
+    def __init__(self):
+        self.cache = {}
+    def get(self, url):
+        if url in self.cache:
+            return self.cache[url]
+        else:
+            return None
+    def set(self, url, key_hex):
+        self.cache[url] = key_hex
+
 class PlayListSegment:
     def __init__(self, sequence_id, duration, url):
         self.sequence_id = sequence_id
         self.duration = duration
         self.url = url
+        self.key_url = None
+        self.encryption_method = None
 
 class PlayList:
     def __init__(self):
         self.segments = []
-        self.key = None
-        self.key_url = None
-        self.encryption_method = None
         self.sequence_id = None
         
     @staticmethod
@@ -109,6 +138,9 @@ class PlayList:
         playlist = PlayList()
         lines = playlist_file.splitlines(False)
         key_info = None
+        last_key_url = None
+        last_encryption_method = None
+
         if lines[0] == "#EXTM3U":
             segment_duration = None
             sequence_id_offset = 0
@@ -118,7 +150,10 @@ class PlayList:
                     if not lines[i].startswith("#"):
                     
                         url = "%s/%s" % (base_url, lines[i])
-                        playlist.segments.append(PlayListSegment(playlist.sequence_id + sequence_id_offset, segment_duration, url))
+                        new_segment = PlayListSegment(playlist.sequence_id + sequence_id_offset, segment_duration, url)
+                        new_segment.key_url = last_key_url
+                        new_segment.encryption_method = last_encryption_method
+                        playlist.segments.append(new_segment)
                         sequence_id_offset = sequence_id_offset + 1
     
                         # if this is a url, clear the stored states
@@ -136,13 +171,13 @@ class PlayList:
                                 value = value[1: len(value)-1]
     
                             if key == "METHOD":
-                                playlist.encryption_method = value
+                                last_encryption_method = value
                             elif key == "URI":
                                 # download the key
                                 if value.startswith("http://") or value.startswith("https://"):
-                                    playlist.key_url = value
+                                    last_key_url = value
                                 else:
-                                    playlist.key_url = "%s/%s" % (base_url, value)
+                                    last_key_url = "%s/%s" % (base_url, value)
                     elif lines[i].startswith("#EXT-X-MEDIA-SEQUENCE:"):
                         playlist.sequence_id = int(lines[i][len("#EXT-X-MEDIA-SEQUENCE:"):])
                     else:
