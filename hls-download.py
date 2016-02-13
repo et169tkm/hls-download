@@ -1,5 +1,7 @@
 import argparse
 import binascii
+import datetime
+import dateutil.parser
 import os
 import pycurl
 import sys
@@ -21,6 +23,9 @@ def main(argv):
     data_dir = args.destination
     name = args.name
     url = args.url
+    p = None
+    last_playlist = None
+
     d = Download(url)
     d.perform()
     printlog("http status code: %s" % d.curl.getinfo(pycurl.HTTP_CODE))
@@ -51,7 +56,12 @@ def main(argv):
             if d.response_status != 200:
                 break
             playlist_download_time = time.time()
+
+            last_playlist = p
             p = PlayList.parse(playlist_file, d.get_base_url(d.get_effective_url()))
+            if p.timestamp == None:
+                p.fill_timestamps_with_last_playlist(last_playlist)
+
             print "=================== playlist"
             print playlist_file
             print "==================="
@@ -67,7 +77,7 @@ def main(argv):
             f = open('%s/%s-%d-playlist.m3u8' % (data_dir, name, p.sequence_id), 'w+')
             f.write(playlist_file)
             f.close()
-            
+
             for segment in p.segments:
                 if (segment.key_url != None and key_cache.get(segment.key_url) == None):
                     d = Download(segment.key_url)
@@ -83,7 +93,7 @@ def main(argv):
 
                     key_cache.set(segment.key_url, binascii.hexlify(key))
                     
-
+                print "Segment timestamp: %d" % segment.timestamp
                 print "Segment duration: %d" % segment.duration
                 print "segment url: %s" % segment.url
                 segment_filename = '%s/%s-%d.ts%s' % (data_dir, name, segment.sequence_id, (".enc" if segment.encryption_method != None else ""))
@@ -115,6 +125,14 @@ def main(argv):
                 printlog("now               : %d" % now)
                 printlog("next playlist time: %d" % next_playlist_download_time)
 
+def datetime_to_unix_timestamp(in_date):
+    # very weirdly, datetime.strftime("%s") respects the tzinfo in the datetime object
+    # but when it prints the %s, it doesn't print the unix timestamp, it prints (unix timestamp - local tz offset)
+    in_date_timestamp = int(in_date.strftime("%s"))
+    epoch = datetime.datetime(1970, 1, 1, 0, 0, 0)
+    epoch_timestamp = int(epoch.strftime("%s"))
+    return (in_date_timestamp - epoch_timestamp)
+
 def printlog(message):
     sys.stdout.write(message + "\n")
 
@@ -132,6 +150,7 @@ class KeyCache:
 class PlayListSegment:
     def __init__(self, sequence_id, duration, url):
         self.sequence_id = sequence_id
+        self.timestamp = None
         self.duration = duration
         self.url = url
         self.key_url = None
@@ -141,6 +160,7 @@ class PlayList:
     def __init__(self):
         self.segments = []
         self.sequence_id = None
+        self.timestamp = None
         
     @staticmethod
     def parse(playlist_file, base_url):
@@ -149,6 +169,7 @@ class PlayList:
         key_info = None
         last_key_url = None
         last_encryption_method = None
+        segments_total_duration = 0
 
         if lines[0] == "#EXTM3U":
             segment_duration = None
@@ -162,8 +183,12 @@ class PlayList:
                         new_segment = PlayListSegment(playlist.sequence_id + sequence_id_offset, segment_duration, url)
                         new_segment.key_url = last_key_url
                         new_segment.encryption_method = last_encryption_method
+                        if playlist.timestamp != None:
+                            new_segment.timestamp = playlist.timestamp + segments_total_duration
                         playlist.segments.append(new_segment)
+
                         sequence_id_offset = sequence_id_offset + 1
+                        segments_total_duration += segment_duration
     
                         # if this is a url, clear the stored states
                         segment_duration = None
@@ -189,6 +214,9 @@ class PlayList:
                                     last_key_url = "%s/%s" % (base_url, value)
                     elif lines[i].startswith("#EXT-X-MEDIA-SEQUENCE:"):
                         playlist.sequence_id = int(lines[i][len("#EXT-X-MEDIA-SEQUENCE:"):])
+                    elif lines[i].startswith("#EXT-X-PROGRAM-DATE-TIME:"):
+                        date_string = lines[i][len("#EXT-X-PROGRAM-DATE-TIME:"):]
+                        playlist.timestamp = datetime_to_unix_timestamp(dateutil.parser.parse(date_string))
                     else:
                         print lines[i]
         if len(playlist.segments) > 0:
@@ -201,6 +229,24 @@ class PlayList:
         for segment in self.segments:
             total_duration = total_duration + segment.duration
         return total_duration
+
+    def fill_timestamps_with_last_playlist(self, last_playlist):
+        if self.timestamp != None and last_playlist != None and len(self.segments) > 0:
+            this_playlist_first_segment = self.segments[0]
+            for segment in last_playlist.segments:
+                if segment.sequence_id == this_playlist_first_segment.sequence_id:
+                    self.timestamp = segment.sequence_id.timestamp
+                    break
+                elif segment.sequence_id + 1 == this_playlist_first_segment.sequence_id:
+                    self.timestamp = segment.sequence_id.timestamp + segment.duration
+                    break
+        if self.timestamp == None:
+            # if nothing is found, use the current time as the last resort
+            self.timestamp = time.time()
+        total_duration = 0
+        for segment in self.segments:
+            segment.timestamp = self.timestamp + total_duration
+            total_duration += segment.duration
 
 class AdaptiveListStream:
     def __init__(self, info, url):
