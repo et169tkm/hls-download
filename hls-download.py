@@ -1,3 +1,4 @@
+import argparse
 import binascii
 import os
 import pycurl
@@ -8,13 +9,19 @@ import time
 import urlparse
 
 def main(argv):
-    if len(argv) < 2:
-        printlog("Please specify url")
-    else:
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("-d", "--destination", help="The destination directory, default is the current directory.", type=str, default=".")
+    #argparser.add_argument("--is-live", help="Whether or not the stream is a live stream (a stream with indefinite length).", action="store_false")
+    #argparser.add_argument("-l", "--length", help="Optional. Only has effect when --is-live is set. The approximate length in seconds to download, if this is not set, it will keep recording.", type=int, default=0)
+    argparser.add_argument("name", help="The name of the channel, this will be used in the output file names.", type=str)
+    argparser.add_argument("url", help="The URL of the stream", type=str)
+    args = argparser.parse_args()
+
+    if True:
         key_cache = KeyCache()
-        data_dir = 'data'
-        name = 'now100'
-        url = argv[1]
+        data_dir = args.destination
+        name = args.name
+        url = args.url
         d = Download(url)
         d.perform()
         printlog("http status code: %s" % d.curl.getinfo(pycurl.HTTP_CODE))
