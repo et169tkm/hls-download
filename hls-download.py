@@ -165,7 +165,7 @@ class PlayList:
                         elements = lines[i][len("#EXTINF:"):].split(',')
                         if (len(elements) >= 1):
                             # assume the first item is the duration
-                            segment_duration = int(elements[0])
+                            segment_duration = float(elements[0])
                     elif lines[i].startswith("#EXT-X-KEY:"):
                         elements = lines[i][len("#EXT-X-KEY:"):].split(",")
                         for element in elements:
