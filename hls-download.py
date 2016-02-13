@@ -12,6 +12,7 @@ def main(argv):
         printlog("Please specify url")
     else:
         key_cache = KeyCache()
+        data_dir = 'data'
         name = 'now100'
         url = argv[1]
         d = Download(url)
@@ -50,14 +51,14 @@ def main(argv):
                 print "==================="
     
                 # save adaptive list
-                adaptive_list_file_path = '%s-%d-adaptive.m3u8' % (name, p.sequence_id)
+                adaptive_list_file_path = '%s/%s-%d-adaptive.m3u8' % (data_dir, name, p.sequence_id)
                 if should_save_adaptive_list:
                     should_save_adaptive_list = False
                     f = open(adaptive_list_file_path, 'w+')
                     f.write(adaptive_list_file)
                     f.close()
                 # save play list
-                f = open('%s-%d-playlist.m3u8' % (name, p.sequence_id), 'w+')
+                f = open('%s/%s-%d-playlist.m3u8' % (data_dir, name, p.sequence_id), 'w+')
                 f.write(playlist_file)
                 f.close()
                 
@@ -70,7 +71,7 @@ def main(argv):
                         key = d.get_body()
                         d.close()
 
-                        key_file = open("%s-%d.key" % (name, segment.sequence_id), "wb")
+                        key_file = open("%s/%s-%d.key" % (data_dir, name, segment.sequence_id), "wb")
                         key_file.write(key)
                         key_file.close()
 
@@ -79,7 +80,7 @@ def main(argv):
 
                     print "Segment duration: %d" % segment.duration
                     print "segment url: %s" % segment.url
-                    segment_filename = '%s-%d.ts%s' % (name, segment.sequence_id, (".enc" if segment.encryption_method != None else ""))
+                    segment_filename = '%s/%s-%d.ts%s' % (data_dir, name, segment.sequence_id, (".enc" if segment.encryption_method != None else ""))
                     if os.path.isfile(segment_filename):
                         printlog("file exist, skip downloading: %s" % segment_filename)
                     else:
@@ -92,8 +93,10 @@ def main(argv):
                                     "-K", key_cache.get(segment.key_url),
                                     "-iv", "%032x" % segment.sequence_id,
                                     "-in", segment_filename,
-                                    "-out", "%s-%d.ts" % (name, segment.sequence_id)]
+                                    "-out", "%s/%s-%d.ts" % (data_dir, name, segment.sequence_id)]
+                            printlog("decryption start")
                             subprocess.call(command)
+                            printlog("decryption finished")
                             
 
                 next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
