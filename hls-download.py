@@ -17,104 +17,103 @@ def main(argv):
     argparser.add_argument("url", help="The URL of the stream", type=str)
     args = argparser.parse_args()
 
-    if True:
-        key_cache = KeyCache()
-        data_dir = args.destination
-        name = args.name
-        url = args.url
-        d = Download(url)
-        d.perform()
-        printlog("http status code: %s" % d.curl.getinfo(pycurl.HTTP_CODE))
-        printlog("base url: %s" % d.get_effective_url())
-        printlog("base url: %s" % d.get_base_url(d.get_effective_url()))
+    key_cache = KeyCache()
+    data_dir = args.destination
+    name = args.name
+    url = args.url
+    d = Download(url)
+    d.perform()
+    printlog("http status code: %s" % d.curl.getinfo(pycurl.HTTP_CODE))
+    printlog("base url: %s" % d.get_effective_url())
+    printlog("base url: %s" % d.get_base_url(d.get_effective_url()))
 
-        #printlog(d.get_body())
+    #printlog(d.get_body())
 
-        adaptive_list_file = d.get_body()
-        streams = AdaptiveListStream.parseList(adaptive_list_file, d.get_base_url(d.get_effective_url()))
-        print "=================== adaptive list"
-        print adaptive_list_file
-        print "==================="
-        if (streams != None):
-            highest_stream = None
-            for stream in streams:
-                print "stream bandwidth: %s" % stream.bandwidth
-                print "stream url: %s" % stream.url
-                if highest_stream == None or stream.bandwidth > highest_stream.bandwidth:
-                    highest_stream = stream
+    adaptive_list_file = d.get_body()
+    streams = AdaptiveListStream.parseList(adaptive_list_file, d.get_base_url(d.get_effective_url()))
+    print "=================== adaptive list"
+    print adaptive_list_file
+    print "==================="
+    if (streams != None):
+        highest_stream = None
+        for stream in streams:
+            print "stream bandwidth: %s" % stream.bandwidth
+            print "stream url: %s" % stream.url
+            if highest_stream == None or stream.bandwidth > highest_stream.bandwidth:
+                highest_stream = stream
 
-            # start downloading
-            should_save_adaptive_list = True
-            while True:
-                d = Download(highest_stream.url)
-                d.perform()
-                playlist_file = d.get_body()
-                if d.response_status != 200:
-                    break
-                playlist_download_time = time.time()
-                p = PlayList.parse(playlist_file, d.get_base_url(d.get_effective_url()))
-                print "=================== playlist"
-                print playlist_file
-                print "==================="
-    
-                # save adaptive list
-                adaptive_list_file_path = '%s/%s-%d-adaptive.m3u8' % (data_dir, name, p.sequence_id)
-                if should_save_adaptive_list:
-                    should_save_adaptive_list = False
-                    f = open(adaptive_list_file_path, 'w+')
-                    f.write(adaptive_list_file)
-                    f.close()
-                # save play list
-                f = open('%s/%s-%d-playlist.m3u8' % (data_dir, name, p.sequence_id), 'w+')
-                f.write(playlist_file)
+        # start downloading
+        should_save_adaptive_list = True
+        while True:
+            d = Download(highest_stream.url)
+            d.perform()
+            playlist_file = d.get_body()
+            if d.response_status != 200:
+                break
+            playlist_download_time = time.time()
+            p = PlayList.parse(playlist_file, d.get_base_url(d.get_effective_url()))
+            print "=================== playlist"
+            print playlist_file
+            print "==================="
+
+            # save adaptive list
+            adaptive_list_file_path = '%s/%s-%d-adaptive.m3u8' % (data_dir, name, p.sequence_id)
+            if should_save_adaptive_list:
+                should_save_adaptive_list = False
+                f = open(adaptive_list_file_path, 'w+')
+                f.write(adaptive_list_file)
                 f.close()
-                
-                for segment in p.segments:
-                    if (segment.key_url != None and key_cache.get(segment.key_url) == None):
-                        d = Download(segment.key_url)
-                        print "going to download key"
-                        d.perform()
-                        print "finished download key"
-                        key = d.get_body()
-                        d.close()
+            # save play list
+            f = open('%s/%s-%d-playlist.m3u8' % (data_dir, name, p.sequence_id), 'w+')
+            f.write(playlist_file)
+            f.close()
+            
+            for segment in p.segments:
+                if (segment.key_url != None and key_cache.get(segment.key_url) == None):
+                    d = Download(segment.key_url)
+                    print "going to download key"
+                    d.perform()
+                    print "finished download key"
+                    key = d.get_body()
+                    d.close()
 
-                        key_file = open("%s/%s-%d.key" % (data_dir, name, segment.sequence_id), "wb")
-                        key_file.write(key)
-                        key_file.close()
+                    key_file = open("%s/%s-%d.key" % (data_dir, name, segment.sequence_id), "wb")
+                    key_file.write(key)
+                    key_file.close()
 
-                        key_cache.set(segment.key_url, binascii.hexlify(key))
+                    key_cache.set(segment.key_url, binascii.hexlify(key))
+                    
+
+                print "Segment duration: %d" % segment.duration
+                print "segment url: %s" % segment.url
+                segment_filename = '%s/%s-%d.ts%s' % (data_dir, name, segment.sequence_id, (".enc" if segment.encryption_method != None else ""))
+                if os.path.isfile(segment_filename):
+                    printlog("file exist, skip downloading: %s" % segment_filename)
+                else:
+                    d = Download(segment.url, segment_filename)
+                    d.perform()
+                    d.close()
+
+                    if segment.encryption_method == "AES-128":
+                        command = ["openssl", "aes-128-cbc", "-d",
+                                "-K", key_cache.get(segment.key_url),
+                                "-iv", "%032x" % segment.sequence_id,
+                                "-in", segment_filename,
+                                "-out", "%s/%s-%d.ts" % (data_dir, name, segment.sequence_id)]
+                        printlog("decryption start")
+                        subprocess.call(command)
+                        printlog("decryption finished")
                         
 
-                    print "Segment duration: %d" % segment.duration
-                    print "segment url: %s" % segment.url
-                    segment_filename = '%s/%s-%d.ts%s' % (data_dir, name, segment.sequence_id, (".enc" if segment.encryption_method != None else ""))
-                    if os.path.isfile(segment_filename):
-                        printlog("file exist, skip downloading: %s" % segment_filename)
-                    else:
-                        d = Download(segment.url, segment_filename)
-                        d.perform()
-                        d.close()
-
-                        if segment.encryption_method == "AES-128":
-                            command = ["openssl", "aes-128-cbc", "-d",
-                                    "-K", key_cache.get(segment.key_url),
-                                    "-iv", "%032x" % segment.sequence_id,
-                                    "-in", segment_filename,
-                                    "-out", "%s/%s-%d.ts" % (data_dir, name, segment.sequence_id)]
-                            printlog("decryption start")
-                            subprocess.call(command)
-                            printlog("decryption finished")
-                            
-
-                next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
-                now = time.time()
-                if (next_playlist_download_time - now> 0):
-                    printlog("sleep: %d" % (next_playlist_download_time - now))
-                    time.sleep(next_playlist_download_time - now)
-                else:
-                    printlog("now is already > next playlist time, go on")
-                    printlog("now               : %d" % now)
-                    printlog("next playlist time: %d" % next_playlist_download_time)
+            next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
+            now = time.time()
+            if (next_playlist_download_time - now> 0):
+                printlog("sleep: %d" % (next_playlist_download_time - now))
+                time.sleep(next_playlist_download_time - now)
+            else:
+                printlog("now is already > next playlist time, go on")
+                printlog("now               : %d" % now)
+                printlog("next playlist time: %d" % next_playlist_download_time)
 
 def printlog(message):
     sys.stdout.write(message + "\n")
