@@ -13,8 +13,7 @@ import urlparse
 def main(argv):
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--destination", help="The destination directory, default is the current directory.", type=str, default=".")
-    #argparser.add_argument("--is-live", help="Whether or not the stream is a live stream (a stream with indefinite length).", action="store_false")
-    #argparser.add_argument("-l", "--length", help="Optional. Only has effect when --is-live is set. The approximate length in seconds to download, if this is not set, it will keep recording.", type=int, default=0)
+    #argparser.add_argument("-l", "--length", help="The approximate length in seconds to download, if this is not set, it will keep recording.", type=int, default=0)
     argparser.add_argument("name", help="The name of the channel, this will be used in the output file names.", type=str)
     argparser.add_argument("url", help="The URL of the stream", type=str)
     args = argparser.parse_args()
@@ -145,17 +144,20 @@ def main(argv):
                         with open("%s/%s-list.txt" % (data_dir, name), "a+") as list_file:
                             list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
                             list_file.close()
-                        
 
-            next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
-            now = time.time()
-            if (next_playlist_download_time - now> 0):
-                printlog("sleep: %d" % (next_playlist_download_time - now))
-                time.sleep(next_playlist_download_time - now)
+            if p.is_last_list:
+                printlog("Reached the end of all playlists.")
+                break
             else:
-                printlog("now is already > next playlist time, go on")
-                printlog("now               : %d" % now)
-                printlog("next playlist time: %d" % next_playlist_download_time)
+                next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
+                now = time.time()
+                if (next_playlist_download_time - now> 0):
+                    printlog("sleep: %d" % (next_playlist_download_time - now))
+                    time.sleep(next_playlist_download_time - now)
+                else:
+                    printlog("now is already > next playlist time, go on")
+                    printlog("now               : %d" % now)
+                    printlog("next playlist time: %d" % next_playlist_download_time)
 
 def get_url(base_url, url_string):
     if url_string.startswith("http://") or url_string.startswith("https://"):
@@ -199,6 +201,7 @@ class PlayList:
         self.segments = []
         self.sequence_id = None
         self.timestamp = None
+        self.is_last_list = False
         
     @staticmethod
     def parse(playlist_file, base_url):
@@ -251,6 +254,8 @@ class PlayList:
                     elif lines[i].startswith("#EXT-X-PROGRAM-DATE-TIME:"):
                         date_string = lines[i][len("#EXT-X-PROGRAM-DATE-TIME:"):]
                         playlist.timestamp = datetime_to_unix_timestamp(dateutil.parser.parse(date_string))
+                    elif lines[i].startswith("#EXT-X-ENDLIST"):
+                        playlist.is_last_list = True
                     else:
                         print lines[i]
         if len(playlist.segments) > 0:
