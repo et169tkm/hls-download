@@ -113,6 +113,9 @@ def main(argv):
                         printlog("decryption start")
                         subprocess.call(command)
                         printlog("decryption finished")
+
+                    with open("%s/%s-list.txt" % (data_dir, name), "a+") as listfile:
+                        listfile.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
                         
 
             next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
