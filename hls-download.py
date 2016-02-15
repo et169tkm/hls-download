@@ -157,6 +157,12 @@ def main(argv):
                 printlog("now               : %d" % now)
                 printlog("next playlist time: %d" % next_playlist_download_time)
 
+def get_url(base_url, url_string):
+    if url_string.startswith("http://") or url_string.startswith("https://"):
+        return url_string
+    else:
+        return "%s/%s" % (base_url, url_string)
+
 def datetime_to_unix_timestamp(in_date):
     # very weirdly, datetime.strftime("%s") respects the tzinfo in the datetime object
     # but when it prints the %s, it doesn't print the unix timestamp, it prints (unix timestamp - local tz offset)
@@ -210,8 +216,7 @@ class PlayList:
 
                 if lines[i] != "":
                     if not lines[i].startswith("#"):
-                    
-                        url = "%s/%s" % (base_url, lines[i])
+                        url = get_url(base_url, lines[i])
                         new_segment = PlayListSegment(playlist.sequence_id + sequence_id_offset, segment_duration, url)
                         new_segment.key_url = last_key_url
                         new_segment.encryption_method = last_encryption_method
@@ -240,10 +245,7 @@ class PlayList:
                                 last_encryption_method = value
                             elif key == "URI":
                                 # download the key
-                                if value.startswith("http://") or value.startswith("https://"):
-                                    last_key_url = value
-                                else:
-                                    last_key_url = "%s/%s" % (base_url, value)
+                                last_key_url = get_url(base_url, value)
                     elif lines[i].startswith("#EXT-X-MEDIA-SEQUENCE:"):
                         playlist.sequence_id = int(lines[i][len("#EXT-X-MEDIA-SEQUENCE:"):])
                     elif lines[i].startswith("#EXT-X-PROGRAM-DATE-TIME:"):
@@ -302,7 +304,7 @@ class AdaptiveListStream:
         if lines[0] == "#EXTM3U":
             for i in range(len(lines)):
                 if lines[i].startswith("#EXT-X-STREAM-INF:") and i < len(lines)-1:
-                    url = "%s/%s" % (base_url, lines[i+1])
+                    url = get_url(base_url, lines[i+1])
                     stream = AdaptiveListStream(lines[i], url)
                     if stream != None and streams == None:
                         streams = []
