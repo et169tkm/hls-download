@@ -104,6 +104,7 @@ def main(argv):
                     d.perform()
                     d.close()
 
+                    # decrypt the file if necessary
                     if segment.encryption_method == "AES-128":
                         command = ["openssl", "aes-128-cbc", "-d",
                                 "-K", key_cache.get(segment.key_url),
@@ -111,11 +112,28 @@ def main(argv):
                                 "-in", segment_filename,
                                 "-out", "%s/%s-%d.ts" % (data_dir, name, segment.sequence_id)]
                         printlog("decryption start")
-                        subprocess.call(command)
-                        printlog("decryption finished")
+                        openssl_return_code = subprocess.call(command)
 
-                    with open("%s/%s-list.txt" % (data_dir, name), "a+") as listfile:
-                        listfile.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
+                    # check decryption result
+                    is_decryption_successful = False
+                    if segment.encryption_method != None:
+                        if openssl_return_code == 0:
+                            with open("%s/%s-%d.ts" % (data_dir, name, segment.sequence_id), "rb") as decrypted_file:
+                                first_byte = decrypted_file.read(1)
+                                decrypted_file.close()
+                                is_decryption_successful = (first_byte == 'G') # the first byte should be 'G' (0x47)
+                            if is_decryption_successful:
+                                printlog("decryption finished")
+                            else:
+                                printlog("decryption failed, first byte of file is: 0x%x (expected to be 0x47)" % first_byte)
+                        else:
+                            printlog("Decryption failed, openssl returned: %d" % openssl_return_code)
+                            
+                    # print to logs if it is plaintext or decryption was successful
+                    if segment.encryption_method == None or is_decryption_successful:
+                        with open("%s/%s-list.txt" % (data_dir, name), "a+") as list_file:
+                            list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
+                            list_file.close()
                         
 
             next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
