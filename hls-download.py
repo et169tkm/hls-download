@@ -25,6 +25,7 @@ def main(argv):
     url = args.url
     p = None
     last_playlist = None
+    should_keep_intermediary_file = True
 
     d = Download(url)
     d.perform()
@@ -48,7 +49,7 @@ def main(argv):
                 highest_stream = stream
 
         # start downloading
-        should_save_adaptive_list = True
+        should_save_adaptive_list = True # only save the adaptive list in the first loop
         while True:
             d = Download(highest_stream.url)
             d.perform()
@@ -66,17 +67,18 @@ def main(argv):
             print playlist_file
             print "==================="
 
-            # save adaptive list
-            adaptive_list_file_path = '%s/%s-%d-adaptive.m3u8' % (data_dir, name, p.sequence_id)
-            if should_save_adaptive_list:
-                should_save_adaptive_list = False
-                f = open(adaptive_list_file_path, 'w+')
-                f.write(adaptive_list_file)
+            if should_keep_intermediary_file:
+                # save adaptive list
+                adaptive_list_file_path = '%s/%s-%d-adaptive.m3u8' % (data_dir, name, p.sequence_id)
+                if should_save_adaptive_list: # only save once
+                    should_save_adaptive_list = False
+                    f = open(adaptive_list_file_path, 'w+')
+                    f.write(adaptive_list_file)
+                    f.close()
+                # save play list
+                f = open('%s/%s-%d-playlist.m3u8' % (data_dir, name, p.sequence_id), 'w+')
+                f.write(playlist_file)
                 f.close()
-            # save play list
-            f = open('%s/%s-%d-playlist.m3u8' % (data_dir, name, p.sequence_id), 'w+')
-            f.write(playlist_file)
-            f.close()
 
             for segment in p.segments:
                 if (segment.key_url != None and key_cache.get(segment.key_url) == None):
@@ -87,20 +89,27 @@ def main(argv):
                     key = d.get_body()
                     d.close()
 
-                    key_file = open("%s/%s-%d.key" % (data_dir, name, segment.sequence_id), "wb")
-                    key_file.write(key)
-                    key_file.close()
+                    if should_keep_intermediary_file:
+                        key_file = open("%s/%s-%d.key" % (data_dir, name, segment.sequence_id), "wb")
+                        key_file.write(key)
+                        key_file.close()
 
                     key_cache.set(segment.key_url, binascii.hexlify(key))
                     
                 print "Segment timestamp: %d" % segment.timestamp
                 print "Segment duration: %d" % segment.duration
                 print "segment url: %s" % segment.url
-                segment_filename = '%s/%s-%d.ts%s' % (data_dir, name, segment.sequence_id, (".enc" if segment.encryption_method != None else ""))
-                if os.path.isfile(segment_filename):
-                    printlog("file exist, skip downloading: %s" % segment_filename)
+                segment_filename = '%s/%s-%d.ts' % (data_dir, name, segment.sequence_id)
+                encrypted_segment_filename = "%s.enc" % segment_filename
+                if segment.encryption_method == "AES-128":
+                    download_filename = encrypted_segment_filename
                 else:
-                    d = Download(segment.url, segment_filename)
+                    download_filename = segment_filename
+
+                if os.path.isfile(segment_filename) or os.path.isfile(encrypted_segment_filename):
+                    printlog("file exist, skip downloading: %s" % download_filename)
+                else:
+                    d = Download(segment.url, download_filename)
                     d.perform()
                     d.close()
 
@@ -109,8 +118,8 @@ def main(argv):
                         command = ["openssl", "aes-128-cbc", "-d",
                                 "-K", key_cache.get(segment.key_url),
                                 "-iv", "%032x" % segment.sequence_id,
-                                "-in", segment_filename,
-                                "-out", "%s/%s-%d.ts" % (data_dir, name, segment.sequence_id)]
+                                "-in", encrypted_segment_filename,
+                                "-out", segment_filename]
                         printlog("decryption start")
                         openssl_return_code = subprocess.call(command)
 
@@ -118,12 +127,14 @@ def main(argv):
                     is_decryption_successful = False
                     if segment.encryption_method != None:
                         if openssl_return_code == 0:
-                            with open("%s/%s-%d.ts" % (data_dir, name, segment.sequence_id), "rb") as decrypted_file:
+                            with open(segment_filename, "rb") as decrypted_file:
                                 first_byte = decrypted_file.read(1)
                                 decrypted_file.close()
                                 is_decryption_successful = (first_byte == 'G') # the first byte should be 'G' (0x47)
                             if is_decryption_successful:
                                 printlog("decryption finished")
+                                if not should_keep_intermediary_file:
+                                    os.remove(encrypted_segment_filename)
                             else:
                                 printlog("decryption failed, first byte of file is: 0x%x (expected to be 0x47)" % first_byte)
                         else:
