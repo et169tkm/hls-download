@@ -13,7 +13,7 @@ import urlparse
 def main(argv):
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--destination", help="The destination directory, default is the current directory.", type=str, default=".")
-    #argparser.add_argument("-l", "--length", help="The approximate length in seconds to download, if this is not set, it will keep recording.", type=int, default=0)
+    argparser.add_argument("-l", "--length", help="The approximate length in seconds to download, if this is not set, it will keep recording.", type=int, default=0)
     argparser.add_argument("name", help="The name of the channel, this will be used in the output file names.", type=str)
     argparser.add_argument("url", help="The URL of the stream", type=str)
     args = argparser.parse_args()
@@ -22,9 +22,11 @@ def main(argv):
     data_dir = args.destination
     name = args.name
     url = args.url
+    target_record_length = args.length
     p = None
     last_playlist = None
     should_keep_intermediary_file = True
+    recorded_duration = 0
 
     d = Download(url)
     d.perform()
@@ -49,7 +51,8 @@ def main(argv):
 
         # start downloading
         should_save_adaptive_list = True # only save the adaptive list in the first loop
-        while True:
+        should_continue_recording = True
+        while should_continue_recording:
             d = Download(highest_stream.url)
             d.perform()
             playlist_file = d.get_body()
@@ -95,8 +98,8 @@ def main(argv):
 
                     key_cache.set(segment.key_url, binascii.hexlify(key))
                     
-                print "Segment timestamp: %d" % segment.timestamp
-                print "Segment duration: %d" % segment.duration
+                print "Segment timestamp: %f" % segment.timestamp
+                print "Segment duration: %f" % segment.duration
                 print "segment url: %s" % segment.url
                 segment_filename = '%s/%s-%d.ts' % (data_dir, name, segment.sequence_id)
                 encrypted_segment_filename = "%s.enc" % segment_filename
@@ -145,10 +148,16 @@ def main(argv):
                             list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
                             list_file.close()
 
+                # reording duration
+                recorded_duration = recorded_duration + segment.duration
+                if target_record_length > 0 and recorded_duration >= target_record_length:
+                    should_continue_recording = False
+                    printlog("Reached target recording duration, recorded: %f seconds" % recorded_duration)
+                    break
             if p.is_last_list:
+                should_continue_recording = False
                 printlog("Reached the end of all playlists.")
-                break
-            else:
+            if should_continue_recording:
                 next_playlist_download_time = playlist_download_time + p.get_total_duration()*0.8
                 now = time.time()
                 if (next_playlist_download_time - now> 0):
