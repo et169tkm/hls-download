@@ -5,6 +5,7 @@ import dateutil.parser
 import os
 import pycurl
 import sys
+import string
 import StringIO
 import subprocess
 import time
@@ -65,6 +66,10 @@ def main(argv):
             if p.timestamp == None:
                 p.fill_timestamps_with_last_playlist(last_playlist)
 
+            list_of_downloaded_segment_files = read_list_file("%s/%s-list.txt" % (data_dir, name))
+            for x in list_of_downloaded_segment_files:
+                print "download file: %s" % x
+
             print "=================== playlist"
             print playlist_file
             print "==================="
@@ -108,7 +113,8 @@ def main(argv):
                 else:
                     download_filename = segment_filename
 
-                if os.path.isfile(segment_filename) or os.path.isfile(encrypted_segment_filename):
+                if "%s-%d.ts" % (name, segment.sequence_id) in list_of_downloaded_segment_files:
+                #if os.path.isfile(segment_filename) or os.path.isfile(encrypted_segment_filename):
                     printlog("file exist, skip downloading: %s" % download_filename)
                 else:
                     d = Download(segment.url, download_filename)
@@ -184,6 +190,17 @@ def datetime_to_unix_timestamp(in_date):
 
 def printlog(message):
     sys.stdout.write(message + "\n")
+
+def read_list_file(path):
+    file_list = []
+    with open(path) as f:
+        lines = f.readlines()
+        f.close()
+        for line in lines:
+            line = string.rstrip(line, "\n")
+            fields = string.split(line, ',')
+            file_list.append(fields[3])
+    return file_list
 
 class KeyCache:
     def __init__(self):
