@@ -193,13 +193,14 @@ def printlog(message):
 
 def read_list_file(path):
     file_list = []
-    with open(path) as f:
-        lines = f.readlines()
-        f.close()
-        for line in lines:
-            line = string.rstrip(line, "\n")
-            fields = string.split(line, ',')
-            file_list.append(fields[3])
+    if os.path.isfile(path):
+        with open(path) as f:
+            lines = f.readlines()
+            f.close()
+            for line in lines:
+                line = string.rstrip(line, "\n")
+                fields = string.split(line, ',')
+                file_list.append(fields[3])
     return file_list
 
 class KeyCache:
