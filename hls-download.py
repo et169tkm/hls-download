@@ -143,8 +143,7 @@ def main(argv):
                                 is_decryption_successful = (first_byte == 'G') # the first byte should be 'G' (0x47)
                             if is_decryption_successful:
                                 printlog("decryption finished")
-                                if not should_keep_intermediary_file:
-                                    os.remove(encrypted_segment_filename)
+                                os.remove(encrypted_segment_filename)
                             else:
                                 printlog("decryption failed, first byte of file is: 0x%x (expected to be 0x47)" % first_byte)
                         else:
