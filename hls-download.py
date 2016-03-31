@@ -15,6 +15,8 @@ def main(argv):
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--destination", help="The destination directory, default is the current directory.", type=str, default=".")
     argparser.add_argument("-l", "--length", help="The approximate length in seconds to download, if this is not set, it will keep recording.", type=int, default=0)
+    argparser.add_argument("-s", "--socks5_host", help="The host of the SOCKS5 proxy", type=str)
+    argparser.add_argument("-p", "--socks5_port", help="The port of the SOCKS5 proxy", type=int)
     argparser.add_argument("name", help="The name of the channel, this will be used in the output file names.", type=str)
     argparser.add_argument("url", help="The URL of the stream", type=str)
     args = argparser.parse_args()
@@ -29,7 +31,7 @@ def main(argv):
     should_keep_intermediary_file = True
     recorded_duration = 0
 
-    d = Download(url)
+    d = Download(url, None, args.socks5_host, args.socks5_port)
     d.perform()
     printlog("http status code: %s" % d.curl.getinfo(pycurl.HTTP_CODE))
     printlog("base url: %s" % d.get_effective_url())
@@ -54,7 +56,7 @@ def main(argv):
         should_save_adaptive_list = True # only save the adaptive list in the first loop
         should_continue_recording = True
         while should_continue_recording:
-            d = Download(highest_stream.url)
+            d = Download(highest_stream.url, None, args.socks5_host, args.socks5_port)
             d.perform()
             playlist_file = d.get_body()
             if d.response_status != 200:
@@ -89,7 +91,7 @@ def main(argv):
 
             for segment in p.segments:
                 if (segment.key_url != None and key_cache.get(segment.key_url) == None):
-                    d = Download(segment.key_url)
+                    d = Download(segment.key_url, None, args.socks5_host, args.socks5_port)
                     print "going to download key"
                     d.perform()
                     print "finished download key"
@@ -117,7 +119,7 @@ def main(argv):
                 #if os.path.isfile(segment_filename) or os.path.isfile(encrypted_segment_filename):
                     printlog("file exist, skip downloading: %s" % download_filename)
                 else:
-                    d = Download(segment.url, download_filename)
+                    d = Download(segment.url, download_filename, args.socks5_host, args.socks5_port)
                     d.perform()
                     d.close()
 
@@ -344,13 +346,15 @@ class AdaptiveListStream:
         return streams
         
 class Download:
-    def __init__(self, url, filename = None):
+    def __init__(self, url, filename = None, socks5_host = None, socks5_port = None):
         self.url = url
         self.response_body = None
-        self.curl = self.gen_curl(url, filename)
+        self.socks5_host = socks5_host
+        self.socks5_port = socks5_port
         self.method = "GET"
         self.filename = filename
         self.response_status = 0
+        self.curl = self.gen_curl(url, filename)
 
     def gen_curl(self, url, filename = None):
         c = pycurl.Curl()
@@ -367,6 +371,12 @@ class Download:
 
         c.setopt(c.FOLLOWLOCATION, 1)
         c.setopt(c.URL, url)
+
+        # proxy
+        if not self.socks5_host == None and not self.socks5_port == None:
+            c.setopt(pycurl.PROXY, self.socks5_host)
+            c.setopt(pycurl.PROXYPORT, self.socks5_port)
+            c.setopt(pycurl.PROXYTYPE, pycurl.PROXYTYPE_SOCKS5)
 
         return c
 
