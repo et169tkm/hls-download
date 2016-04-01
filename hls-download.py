@@ -4,10 +4,11 @@ import datetime
 import dateutil.parser
 import os
 import pycurl
-import sys
+import shutil
 import string
 import StringIO
 import subprocess
+import sys
 import time
 import urlparse
 
@@ -17,6 +18,7 @@ def main(argv):
     argparser.add_argument("-l", "--length", help="The approximate length in seconds to download, if this is not set, it will keep recording.", type=int, default=0)
     argparser.add_argument("--socks5_host", help="The host of the SOCKS5 proxy", type=str)
     argparser.add_argument("--socks5_port", help="The port of the SOCKS5 proxy", type=int)
+    argparser.add_argument("--retain_limit", help="Remove the files that are older than limit (seconds)", type=int)
     argparser.add_argument("name", help="The name of the channel, this will be used in the output file names.", type=str)
     argparser.add_argument("url", help="The URL of the stream", type=str)
     args = argparser.parse_args()
@@ -68,9 +70,14 @@ def main(argv):
             if p.timestamp == None:
                 p.fill_timestamps_with_last_playlist(last_playlist)
 
-            list_of_downloaded_segment_files = read_list_file("%s/%s-list.txt" % (data_dir, name))
-            for x in list_of_downloaded_segment_files:
-                print "download file: %s" % x
+            db_file_path = "%s/%s-list.txt" % (data_dir, name)
+            db_lines = read_db_file(db_file_path)
+
+            # remove old files, it will also remove the entries for those files in db_lines
+            if args.retain_limit != None:
+                remove_old_files(data_dir, db_lines, args.retain_limit, db_file_path)
+            
+            list_of_downloaded_segment_files = get_downloaded_file_list(db_lines)
 
             print "=================== playlist"
             print playlist_file
@@ -192,17 +199,50 @@ def datetime_to_unix_timestamp(in_date):
 def printlog(message):
     sys.stdout.write(message + "\n")
 
-def read_list_file(path):
-    file_list = []
+def read_db_file(path):
+    lines = []
     if os.path.isfile(path):
         with open(path) as f:
-            lines = f.readlines()
+            in_lines = f.readlines()
             f.close()
-            for line in lines:
-                line = string.rstrip(line, "\n")
-                fields = string.split(line, ',')
-                file_list.append(fields[3])
+        if in_lines != None:
+            for line in in_lines:
+                lines.append(string.rstrip(line, "\n"))
+    return lines
+
+def get_downloaded_file_list(lines):
+    file_list = []
+    if lines != None:
+        for line in lines:
+            fields = string.split(line, ',')
+            file_list.append(fields[3])
     return file_list
+
+def remove_old_files(data_dir, lines, limit, file_list_path):
+    now = time.time()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        fields = string.split(line, ',')
+        t = int(fields[1])
+        if t < now - limit:
+            filename = fields[3]
+            print "Removing %s" % filename
+            path = "%s/%s" % (data_dir, filename)
+            if os.path.isfile(path):
+                #delete the file for real
+                os.remove(path)
+            # yank the line from the file db
+            lines.pop(i)
+            i -= 1
+        i += 1
+    if file_list_path != None:
+        temp_file_path = "%s.tmp" % file_list_path
+        with open(temp_file_path, "w") as f:
+            for line in lines:
+                f.write("%s\n" % line)
+            f.close()
+        shutil.move(temp_file_path, file_list_path)
 
 class KeyCache:
     def __init__(self):
