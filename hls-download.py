@@ -102,6 +102,9 @@ def main(argv):
                 f.close()
 
             for segment in p.segments:
+                if segment.is_download_successful:
+                    # this segment doesn't need downloading, try next one
+                    continue
                 if (segment.key_url != None and key_cache.get(segment.key_url) == None):
                     d = Download(segment.key_url, None, args.socks5_host, args.socks5_port)
                     print "going to download key"
@@ -163,6 +166,7 @@ def main(argv):
                             
                     # print to logs if it is plaintext or decryption was successful
                     if segment.encryption_method == None or is_decryption_successful:
+                        segment.is_download_successful = True
                         with open("%s/%s-list.txt" % (data_dir, name), "a+") as list_file:
                             list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
                             list_file.close()
@@ -268,6 +272,7 @@ class PlayListSegment:
         self.url = url
         self.key_url = None
         self.encryption_method = None
+        self.is_download_successful = False
 
 class PlayList:
     def __init__(self):
