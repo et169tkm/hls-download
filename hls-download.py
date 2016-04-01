@@ -101,82 +101,91 @@ def main(argv):
                 f.write(playlist_file)
                 f.close()
 
-            for segment in p.segments:
-                if segment.is_download_successful:
-                    # this segment doesn't need downloading, try next one
-                    continue
-                if (segment.key_url != None and key_cache.get(segment.key_url) == None):
-                    d = Download(segment.key_url, None, args.socks5_host, args.socks5_port)
-                    print "going to download key"
-                    d.perform()
-                    print "finished download key"
-                    key = d.get_body()
-                    d.close()
-
-                    if should_keep_intermediary_file:
-                        key_file = open("%s/%s-%d.key" % (data_dir, name, segment.sequence_id), "wb")
-                        key_file.write(key)
-                        key_file.close()
-
-                    key_cache.set(segment.key_url, binascii.hexlify(key))
-                    
-                print "Segment timestamp: %f" % segment.timestamp
-                print "Segment duration: %f" % segment.duration
-                print "segment url: %s" % segment.url
-                segment_filename = '%s/%s-%d.ts' % (data_dir, name, segment.sequence_id)
-                encrypted_segment_filename = "%s.enc" % segment_filename
-                if segment.encryption_method == "AES-128":
-                    download_filename = encrypted_segment_filename
-                else:
-                    download_filename = segment_filename
-
-                if "%s-%d.ts" % (name, segment.sequence_id) in list_of_downloaded_segment_files:
-                #if os.path.isfile(segment_filename) or os.path.isfile(encrypted_segment_filename):
-                    printlog("file exist, skip downloading: %s" % download_filename)
-                else:
-                    d = Download(segment.url, download_filename, args.socks5_host, args.socks5_port)
-                    d.perform()
-                    d.close()
-
-                    if d.response_status == 200:
-                        # decrypt the file if necessary
-                        if segment.encryption_method == "AES-128":
-                            command = ["openssl", "aes-128-cbc", "-d",
-                                    "-K", key_cache.get(segment.key_url),
-                                    "-iv", "%032x" % segment.sequence_id,
-                                    "-in", encrypted_segment_filename,
-                                    "-out", segment_filename]
-                            printlog("decryption start")
-                            openssl_return_code = subprocess.call(command)
+            for trial in range(3):
+                has_some_downloads_failed = False
+                for segment in p.segments:
+                    if segment.is_download_successful:
+                        # this segment doesn't need downloading, try next one
+                        continue
+                    if (segment.key_url != None and key_cache.get(segment.key_url) == None):
+                        d = Download(segment.key_url, None, args.socks5_host, args.socks5_port)
+                        print "going to download key"
+                        d.perform()
+                        print "finished download key"
+                        key = d.get_body()
+                        d.close()
     
-                        # check decryption result
-                        is_decryption_successful = False
-                        if segment.encryption_method != None:
-                            if openssl_return_code == 0:
-                                with open(segment_filename, "rb") as decrypted_file:
-                                    first_byte = decrypted_file.read(1)
-                                    decrypted_file.close()
-                                    is_decryption_successful = (first_byte == 'G') # the first byte should be 'G' (0x47)
-                                if is_decryption_successful:
-                                    printlog("decryption finished")
-                                    os.remove(encrypted_segment_filename)
+                        if should_keep_intermediary_file:
+                            key_file = open("%s/%s-%d.key" % (data_dir, name, segment.sequence_id), "wb")
+                            key_file.write(key)
+                            key_file.close()
+    
+                        key_cache.set(segment.key_url, binascii.hexlify(key))
+                        
+                    print "Segment timestamp: %f" % segment.timestamp
+                    print "Segment duration: %f" % segment.duration
+                    print "segment url: %s" % segment.url
+                    segment_filename = '%s/%s-%d.ts' % (data_dir, name, segment.sequence_id)
+                    encrypted_segment_filename = "%s.enc" % segment_filename
+                    if segment.encryption_method == "AES-128":
+                        download_filename = encrypted_segment_filename
+                    else:
+                        download_filename = segment_filename
+    
+                    if "%s-%d.ts" % (name, segment.sequence_id) in list_of_downloaded_segment_files:
+                    #if os.path.isfile(segment_filename) or os.path.isfile(encrypted_segment_filename):
+                        printlog("file exist, skip downloading: %s" % download_filename)
+                    else:
+                        d = Download(segment.url, download_filename, args.socks5_host, args.socks5_port)
+                        d.perform()
+                        d.close()
+    
+                        if d.response_status == 200:
+                            # decrypt the file if necessary
+                            if segment.encryption_method == "AES-128":
+                                command = ["openssl", "aes-128-cbc", "-d",
+                                        "-K", key_cache.get(segment.key_url),
+                                        "-iv", "%032x" % segment.sequence_id,
+                                        "-in", encrypted_segment_filename,
+                                        "-out", segment_filename]
+                                printlog("decryption start")
+                                openssl_return_code = subprocess.call(command)
+        
+                            # check decryption result
+                            is_decryption_successful = False
+                            if segment.encryption_method != None:
+                                if openssl_return_code == 0:
+                                    with open(segment_filename, "rb") as decrypted_file:
+                                        first_byte = decrypted_file.read(1)
+                                        decrypted_file.close()
+                                        is_decryption_successful = (first_byte == 'G') # the first byte should be 'G' (0x47)
+                                    if is_decryption_successful:
+                                        printlog("decryption finished")
+                                        os.remove(encrypted_segment_filename)
+                                    else:
+                                        printlog("decryption failed, first byte of file is: 0x%x (expected to be 0x47)" % first_byte)
                                 else:
-                                    printlog("decryption failed, first byte of file is: 0x%x (expected to be 0x47)" % first_byte)
+                                    printlog("Decryption failed, openssl returned: %d" % openssl_return_code)
+                                    
+                            # print to logs if it is plaintext or decryption was successful
+                            if segment.encryption_method == None or is_decryption_successful:
+                                segment.is_download_successful = True
+                                with open("%s/%s-list.txt" % (data_dir, name), "a+") as list_file:
+                                    list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
+                                    list_file.close()
                             else:
-                                printlog("Decryption failed, openssl returned: %d" % openssl_return_code)
-                                
-                        # print to logs if it is plaintext or decryption was successful
-                        if segment.encryption_method == None or is_decryption_successful:
-                            segment.is_download_successful = True
-                            with open("%s/%s-list.txt" % (data_dir, name), "a+") as list_file:
-                                list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
-                                list_file.close()
-
-                # reording duration
-                recorded_duration = recorded_duration + segment.duration
-                if target_record_length > 0 and recorded_duration >= target_record_length:
-                    should_continue_recording = False
-                    printlog("Reached target recording duration, recorded: %f seconds" % recorded_duration)
+                                has_some_downloads_failed = True
+    
+                    # reording duration
+                    recorded_duration = recorded_duration + segment.duration
+                    if target_record_length > 0 and recorded_duration >= target_record_length:
+                        should_continue_recording = False
+                        printlog("Reached target recording duration, recorded: %f seconds" % recorded_duration)
+                        break
+                if has_some_downloads_failed:
+                    # wait a little bit, sometimes the files cannot be download because we are downloading it before the file exists
+                    time.sleep(3)
+                else:
                     break
             if p.is_last_list:
                 should_continue_recording = False
