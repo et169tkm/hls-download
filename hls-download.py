@@ -19,6 +19,7 @@ def main(argv):
     argparser.add_argument("--socks5_host", help="The host of the SOCKS5 proxy", type=str)
     argparser.add_argument("--socks5_port", help="The port of the SOCKS5 proxy", type=int)
     argparser.add_argument("--retain_limit", help="Remove the files that are older than limit (seconds)", type=int)
+    argparser.add_argument("--preferred_bitrate", help="Instead of downloading the stream with highest bitrate, download the one with this bitrate.", type=int)
     argparser.add_argument("name", help="The name of the channel, this will be used in the output file names.", type=str)
     argparser.add_argument("url", help="The URL of the stream", type=str)
     args = argparser.parse_args()
@@ -47,18 +48,22 @@ def main(argv):
     print adaptive_list_file
     print "==================="
     if (streams != None):
-        highest_stream = None
+        selected_stream = None
         for stream in streams:
             print "stream bandwidth: %s" % stream.bandwidth
             print "stream url: %s" % stream.url
-            if highest_stream == None or stream.bandwidth > highest_stream.bandwidth:
-                highest_stream = stream
+            if args.preferred_bitrate != None and  stream.bandwidth == args.preferred_bitrate:
+                print "stream with preferred bitrate (%d) is found" % args.preferred_bitrate
+                selected_stream = stream
+                break
+            if selected_stream == None or stream.bandwidth > selected_stream.bandwidth:
+                selected_stream = stream
 
         # start downloading
         should_save_adaptive_list = True # only save the adaptive list in the first loop
         should_continue_recording = True
         while should_continue_recording:
-            d = Download(highest_stream.url, None, args.socks5_host, args.socks5_port)
+            d = Download(selected_stream.url, None, args.socks5_host, args.socks5_port)
             d.perform()
             playlist_file = d.get_body()
             if d.response_status != 200:
