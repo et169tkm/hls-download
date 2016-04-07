@@ -21,6 +21,7 @@ def main(argv):
     argparser.add_argument("--socks5_port", help="The port of the SOCKS5 proxy", type=int)
     argparser.add_argument("--retain_limit", help="Remove the files that are older than limit (seconds)", type=int)
     argparser.add_argument("--preferred_bitrate", help="Instead of downloading the stream with highest bitrate, download the one with this bitrate.", type=int)
+    argparser.add_argument("--generate_thumbnail", help="Generate a thumbnail after downloading a video", action="store_true")
     argparser.add_argument("name", help="The name of the channel, this will be used in the output file names.", type=str)
     argparser.add_argument("url", help="The URL of the stream", type=str)
     args = argparser.parse_args()
@@ -129,15 +130,17 @@ def main(argv):
                     print "Segment timestamp: %f" % segment.timestamp
                     print "Segment duration: %f" % segment.duration
                     print "segment url: %s" % segment.url
-                    segment_filename = '%s/%s-%d.ts' % (data_dir, name, segment.sequence_id)
-                    encrypted_segment_filename = "%s.enc" % segment_filename
+                    segment_filename = '%s-%d.ts' % (name, segment.sequence_id)
+                    segment_thumbnail_filename = ''
+                    segment_file_path = '%s/%s' % (data_dir, segment_filename)
+                    encrypted_segment_file_path = "%s.enc" % segment_file_path
                     if segment.encryption_method == "AES-128":
-                        download_filename = encrypted_segment_filename
+                        download_filename = encrypted_segment_file_path
                     else:
-                        download_filename = segment_filename
+                        download_filename = segment_file_path
     
                     if "%s-%d.ts" % (name, segment.sequence_id) in list_of_downloaded_segment_files:
-                    #if os.path.isfile(segment_filename) or os.path.isfile(encrypted_segment_filename):
+                    #if os.path.isfile(segment_file_path) or os.path.isfile(encrypted_segment_file_path):
                         printlog("file exist, skip downloading: %s" % download_filename)
                     else:
                         d = Download(segment.url, download_filename, args.socks5_host, args.socks5_port)
@@ -150,8 +153,8 @@ def main(argv):
                                 command = ["openssl", "aes-128-cbc", "-d",
                                         "-K", key_cache.get(segment.key_url),
                                         "-iv", "%032x" % segment.sequence_id,
-                                        "-in", encrypted_segment_filename,
-                                        "-out", segment_filename]
+                                        "-in", encrypted_segment_file_path,
+                                        "-out", segment_file_path]
                                 printlog("decryption start")
                                 openssl_return_code = subprocess.call(command)
         
@@ -159,13 +162,13 @@ def main(argv):
                             is_decryption_successful = False
                             if segment.encryption_method != None:
                                 if openssl_return_code == 0:
-                                    with open(segment_filename, "rb") as decrypted_file:
+                                    with open(segment_file_path, "rb") as decrypted_file:
                                         first_byte = decrypted_file.read(1)
                                         decrypted_file.close()
                                         is_decryption_successful = (first_byte == 'G') # the first byte should be 'G' (0x47)
                                     if is_decryption_successful:
                                         printlog("decryption finished")
-                                        os.remove(encrypted_segment_filename)
+                                        os.remove(encrypted_segment_file_path)
                                     else:
                                         printlog("decryption failed, first byte of file is: 0x%x (expected to be 0x47)" % first_byte)
                                 else:
@@ -174,8 +177,22 @@ def main(argv):
                             # print to logs if it is plaintext or decryption was successful
                             if segment.encryption_method == None or is_decryption_successful:
                                 segment.is_download_successful = True
+
+                                if args.generate_thumbnail:
+                                    segment_thumbnail_filename = '%s-%d.jpg' % (name, segment.sequence_id)
+                                    segment_thumbnail_file_path = '%s/%s' % (data_dir, segment_thumbnail_filename)
+                                    temp_file_path = '%s/temp.jpg' % data_dir
+                                    if os.path.isfile(temp_file_path): # in case the temp file is already there, delete it first
+                                        os.remove(temp_file_path)
+                                    command = ["ffmpeg", "-loglevel", "panic", "-i", segment_file_path, "-vframes", "1", temp_file_path] # "-loglevel panic" suppress its output
+                                    subprocess.call(command)
+                                    command = ["convert", temp_file_path, "-quality", "80", "-resize", "200x200", segment_thumbnail_file_path]
+                                    subprocess.call(command)
+                                    os.remove(temp_file_path)
+                                    
+
                                 with open("%s/%s-list.txt" % (data_dir, name), "a+") as list_file:
-                                    list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
+                                    list_file.write("%d,%d,%d,%s,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id), segment_thumbnail_filename))
                                     list_file.close()
                             else:
                                 has_some_downloads_failed = True
@@ -253,8 +270,12 @@ def remove_old_files(data_dir, lines, limit, file_list_path):
             print "Removing %s" % filename
             path = "%s/%s" % (data_dir, filename)
             if os.path.isfile(path):
-                #delete the file for real
                 os.remove(path)
+            if len(fields) >= 5: # old version didn't have thumbnail
+                thumbnail = fields[4]
+                thumbnail_path = "%s/%s" % (data_dir, thumbnail)
+                if os.path.isfile(thumbnail_path):
+                    os.remove(thumbnail_path)
             # yank the line from the file db
             lines.pop(i)
             i -= 1
