@@ -387,8 +387,8 @@ class AdaptiveListStream:
         if len(array) == 2:
             for e in array[1].split(','):
                 subarray = e.split('=', 1)
-                if len(subarray) == 2 and subarray[0] == 'BANDWIDTH':
-                    self.bandwidth = int(subarray[1])
+                if len(subarray) == 2 and subarray[0].strip() == 'BANDWIDTH':
+                    self.bandwidth = int(subarray[1].strip())
 
     @staticmethod
     def parseList(adaptive_list, base_url):
