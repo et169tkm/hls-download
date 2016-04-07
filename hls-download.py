@@ -2,6 +2,7 @@ import argparse
 import binascii
 import datetime
 import dateutil.parser
+import math
 import os
 import pycurl
 import shutil
@@ -52,12 +53,15 @@ def main(argv):
         for stream in streams:
             print "stream bandwidth: %s" % stream.bandwidth
             print "stream url: %s" % stream.url
-            if args.preferred_bitrate != None and  stream.bandwidth == args.preferred_bitrate:
-                print "stream with preferred bitrate (%d) is found" % args.preferred_bitrate
-                selected_stream = stream
-                break
-            if selected_stream == None or stream.bandwidth > selected_stream.bandwidth:
-                selected_stream = stream
+            if args.preferred_bitrate == None:
+                # find the stream with the hightest bitrate
+                if selected_stream == None or stream.bandwidth > selected_stream.bandwidth:
+                    selected_stream = stream
+            else:
+                # find the stream with bitrate closest to the preferred bitrate
+                if selected_stream == None or (math.fabs(stream.bandwidth - args.preferred_bitrate) < math.fabs(selected_stream.bandwidth - args.preferred_bitrate)):
+                    selected_stream = stream
+        printlog("Selected stream with bandwidth %d" % selected_stream.bandwidth)
 
         # start downloading
         should_save_adaptive_list = True # only save the adaptive list in the first loop
