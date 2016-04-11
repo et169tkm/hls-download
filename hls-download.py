@@ -181,7 +181,7 @@ def main(argv):
                                 if args.generate_thumbnail:
                                     segment_thumbnail_filename = '%s-%d.jpg' % (name, segment.sequence_id)
                                     segment_thumbnail_file_path = '%s/%s' % (data_dir, segment_thumbnail_filename)
-                                    temp_file_path = '%s/temp.jpg' % data_dir
+                                    temp_file_path = '%s/temp-%d.jpg' % (data_dir, os.getpid())
                                     if os.path.isfile(temp_file_path): # in case the temp file is already there, delete it first
                                         os.remove(temp_file_path)
                                     command = ["ffmpeg", "-loglevel", "panic", "-i", segment_file_path, "-vframes", "1", temp_file_path] # "-loglevel panic" suppress its output
