@@ -192,7 +192,7 @@ def main(argv):
                                     
 
                                 with open("%s/%s-list.txt" % (data_dir, name), "a+") as list_file:
-                                    list_file.write("%d,%d,%d,%s,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id), segment_thumbnail_filename))
+                                    list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
                                     list_file.close()
                             else:
                                 has_some_downloads_failed = True
@@ -267,15 +267,44 @@ def remove_old_files(data_dir, lines, limit, file_list_path):
         t = int(fields[1])
         if t < now - limit:
             filename = fields[3]
-            print "Removing %s" % filename
-            path = "%s/%s" % (data_dir, filename)
-            if os.path.isfile(path):
-                os.remove(path)
-            if len(fields) >= 5: # old version didn't have thumbnail
-                thumbnail = fields[4]
-                thumbnail_path = "%s/%s" % (data_dir, thumbnail)
-                if os.path.isfile(thumbnail_path):
-                    os.remove(thumbnail_path)
+            filename_without_extension = filename
+            dot_index = filename.rfind('.')
+            if dot_index > 0:
+                filename_without_extension = filename[0:dot_index]
+
+            print "Removing %s" % filename_without_extension
+
+            # remove video
+            temp_path = "%s/%s" % (data_dir, filename)
+            if os.path.isfile(temp_path):
+                printlog("  Removing video")
+                os.remove(temp_path)
+            # remove encrypted video
+            temp_path = "%s/%s.enc" % (data_dir, filename)
+            if os.path.isfile(temp_path):
+                printlog("  Removing encrypted video")
+                os.remove(temp_path)
+            # remove thumbnail
+            temp_path = "%s/%s.jpg" % (data_dir, filename_without_extension)
+            if os.path.isfile(temp_path):
+                printlog("  Removing thumbnail")
+                os.remove(temp_path)
+            # remove adaptive list
+            temp_path = "%s/%s-adaptive.m3u8" % (data_dir, filename_without_extension)
+            if os.path.isfile(temp_path):
+                printlog("  Removing adaptive list")
+                os.remove(temp_path)
+            # remove playlist list
+            temp_path = "%s/%s-playlist.m3u8" % (data_dir, filename_without_extension)
+            if os.path.isfile(temp_path):
+                printlog("  Removing playlist")
+                os.remove(temp_path)
+            # remove encryption key
+            temp_path = "%s/%s.key" % (data_dir, filename_without_extension)
+            if os.path.isfile(temp_path):
+                printlog("  Removing encryption key")
+                os.remove(temp_path)
+
             # yank the line from the file db
             lines.pop(i)
             i -= 1
