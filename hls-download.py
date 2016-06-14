@@ -36,6 +36,7 @@ def main(argv):
     should_keep_intermediary_file = True
     recorded_duration = 0
 
+    printlog("Download adaptive list")
     d = Download(url, None, args.socks5_host, args.socks5_port)
     d.perform()
     printlog("http status code: %s" % d.curl.getinfo(pycurl.HTTP_CODE))
