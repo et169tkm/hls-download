@@ -354,7 +354,7 @@ class PlayList:
         last_encryption_method = None
         segments_total_duration = 0
 
-        if lines[0] == "#EXTM3U":
+        if lines != None and len(lines) > 0 and lines[0] == "#EXTM3U":
             segment_duration = None
             sequence_id_offset = 0
             for i in range(len(lines)):
@@ -448,7 +448,7 @@ class AdaptiveListStream:
     def parseList(adaptive_list, base_url):
         streams = None
         lines = adaptive_list.splitlines(False)
-        if lines[0] == "#EXTM3U":
+        if lines != None and len(lines) > 0 and lines[0] == "#EXTM3U":
             for i in range(len(lines)):
                 if lines[i].startswith("#EXT-X-STREAM-INF:") and i < len(lines)-1:
                     url = get_url(base_url, lines[i+1])
@@ -483,6 +483,7 @@ class Download:
         #c.setopt(c.HTTPHEADER, ["Proxy-Connection: Keep-Alive"])
 
         c.setopt(c.FOLLOWLOCATION, 1)
+        c.setopt(c.MAXREDIRS, 10)
         c.setopt(c.URL, url)
 
         # proxy
