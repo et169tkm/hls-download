@@ -71,9 +71,11 @@ def main(argv):
         while should_continue_recording:
             d = Download(selected_stream.url, None, args.socks5_host, args.socks5_port)
             d.perform()
-            playlist_file = d.get_body()
             if d.response_status != 200:
-                break
+                printlog("error downloading playlist, going to sleep 3 seconds and retry")
+                time.sleep(3)
+                continue
+            playlist_file = d.get_body()
             playlist_download_time = time.time()
 
             last_playlist = p
@@ -198,8 +200,12 @@ def main(argv):
                                 with open("%s/%s-list.txt" % (data_dir, name), "a+") as list_file:
                                     list_file.write("%d,%d,%d,%s\n" % (segment.sequence_id, segment.timestamp, segment.duration, "%s-%d.ts" % (name, segment.sequence_id)))
                                     list_file.close()
-                            else:
+                            else: # can't decrypt
+                                printlog("error decrypting segment, has_some_downloads_failed as true")
                                 has_some_downloads_failed = True
+                        else: # response not 200
+                            printlog("error downloading segment, has_some_downloads_failed as true")
+                            has_some_downloads_failed = True
     
                     # reording duration
                     recorded_duration = recorded_duration + segment.duration
@@ -513,14 +519,20 @@ class Download:
             body_buffer = StringIO.StringIO()
             self.curl.setopt(pycurl.WRITEFUNCTION, body_buffer.write)
 
-        self.curl.perform()
-        self.response_status = self.curl.getinfo(pycurl.HTTP_CODE)
+        try:
+            self.curl.perform()
+            self.response_status = self.curl.getinfo(pycurl.HTTP_CODE)
 
-        if self.filename != None:
-            if f != None:
-                f.close()
-        else:
-            self.response_body = body_buffer.getvalue()
+            if self.filename == None:
+                self.response_body = body_buffer.getvalue()
+        except pycurl.error as e:
+            self.response_status = 0
+            printlog("pycurl.error: %s" % str(e))
+        finally:
+            if self.filename != None:
+                if f != None:
+                    f.close()
+            
     def close(self):
         self.curl.close()
 
