@@ -158,6 +158,9 @@ def main(argv):
                                         "-out", segment_file_path]
                                 printlog("decryption start")
                                 openssl_return_code = subprocess.call(command)
+                            elif segment.encryption_method != None:
+                                printlog("encryption_method: %s" % segment.encryption_method)
+                                sys.exit(1)
         
                             # check decryption result
                             is_decryption_successful = False
@@ -388,6 +391,8 @@ class PlayList:
                                 value = value[1: len(value)-1]
     
                             if key == "METHOD":
+                                if value == "NONE":
+                                    value = None
                                 last_encryption_method = value
                             elif key == "URI":
                                 # download the key
