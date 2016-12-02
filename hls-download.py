@@ -72,7 +72,7 @@ def main(argv):
             d = Download(selected_stream.url, None, args.socks5_host, args.socks5_port)
             d.perform()
             if d.response_status != 200:
-                printlog("error downloading playlist, going to sleep 3 seconds and retry")
+                printlog("error downloading playlist (status: %d), going to sleep 3 seconds and retry" % d.response_status)
                 time.sleep(3)
                 continue
             playlist_file = d.get_body()
@@ -204,7 +204,7 @@ def main(argv):
                                 printlog("error decrypting segment, has_some_downloads_failed as true")
                                 has_some_downloads_failed = True
                         else: # response not 200
-                            printlog("error downloading segment, has_some_downloads_failed as true")
+                            printlog("error downloading segment (status: %d), has_some_downloads_failed as true" % d.response_status)
                             has_some_downloads_failed = True
     
                     # reording duration
