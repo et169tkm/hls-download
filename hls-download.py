@@ -491,6 +491,7 @@ class Download:
         c.setopt(c.FOLLOWLOCATION, 1)
         c.setopt(c.MAXREDIRS, 10)
         c.setopt(c.URL, url)
+        c.setopt(c.TIMEOUT, 60)
 
         # proxy
         if not self.socks5_host == None and not self.socks5_port == None:
