@@ -3,6 +3,7 @@
 channel_name="viutv"
 socks5_port=1080
 retain_limit=259200 # seconds
+preferred_bitrate=1800000
 
 
 while true; do
@@ -10,7 +11,7 @@ while true; do
     url=`echo "$json" | python -c 'import sys, json; print json.load(sys.stdin)["asset"]["hls"]["adaptive"][0]'`
     echo "$url"
 
-    python hls-download.py -d "data" --generate_thumbnail --retain_limit "$retain_limit" --preferred_bitrate '863472' --socks5_host localhost --socks5_port "$socks5_port" "$channel_name" "$url"
+    python hls-download.py -d "data" --generate_thumbnail --retain_limit "$retain_limit" --preferred_bitrate "$preferred_bitrate" --socks5_host localhost --socks5_port "$socks5_port" "$channel_name" "$url"
 
     sleep 10
 
