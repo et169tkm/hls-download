@@ -13,6 +13,10 @@ import sys
 import time
 import urlparse
 
+
+EXIT_CODE_PLAYLIST_DOWNLOAD_UNAUTHORIZED = 1
+EXIT_CODE_SEGMENT_DOWNLOAD_UNAUTHORIZED = 2
+
 def main(argv):
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--destination", help="The destination directory, default is the current directory.", type=str, default=".")
@@ -71,7 +75,10 @@ def main(argv):
         while should_continue_recording:
             d = Download(selected_stream.url, None, args.socks5_host, args.socks5_port)
             d.perform()
-            if d.response_status != 200:
+            if d.response_status == 403:
+                printlog("Received 403 downloading playlist, exiting with code 1")
+                sys.exit(EXIT_CODE_PLAYLIST_DOWNLOAD_UNAUTHORIZED)
+            elif d.response_status != 200:
                 printlog("error downloading playlist (status: %d), going to sleep 3 seconds and retry" % d.response_status)
                 time.sleep(3)
                 continue
@@ -203,6 +210,9 @@ def main(argv):
                             else: # can't decrypt
                                 printlog("error decrypting segment, has_some_downloads_failed as true")
                                 has_some_downloads_failed = True
+                        elif d.response_status == 403:
+                            printlog("Received 403 downloading segment, exiting with code 1")
+                            sys.exit(EXIT_CODE_SEGMENT_DOWNLOAD_UNAUTHORIZED)
                         else: # response not 200
                             printlog("error downloading segment (status: %d), has_some_downloads_failed as true" % d.response_status)
                             has_some_downloads_failed = True
