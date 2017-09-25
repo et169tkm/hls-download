@@ -426,6 +426,9 @@ else
     exit 1
 fi
 
-bash extract.bash --channel "$channel" --start_time "$start_time" --length "$duration" -o "$out_file_name"
-mv "$out_file_name" ../recordings/`date +%Y`/
+segment_dir='hls-segments'
+out_dir='radio'
+
+bash extract.bash --channel "$channel" --start_time "$start_time" --length "$duration" -i "$segment_dir" -o "$out_file_name"
+mv "$out_file_name" "$out_dir/"
 

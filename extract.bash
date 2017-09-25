@@ -139,6 +139,7 @@ function help () {
   -c --channel [arg]    Channel
   -s --start_time [arg] Unix time stamp of the start time of the programme, in second.
   -l --length [arg]     Length of the programme (in seconds).
+  -i --in [arg]         Directory that stores the hls segments.
   -o --out [arg]        Output file name.
   -v                    Enable verbose mode, print script as it is executed
   -d --debug            Enables debug mode
@@ -367,6 +368,7 @@ fi
 [[ "${arg_c:-}" ]]     || help      "Channel is required"
 [[ "${arg_s:-}" ]]     || help      "Start time is required"
 [[ "${arg_l:-}" ]]     || help      "Duration(length) is required"
+[[ "${arg_i:-}" ]]     || help      "Input directory is requred"
 [[ "${arg_o:-}" ]]     || help      "Output file name is required"
 [[ "${LOG_LEVEL:-}" ]] || emergency "Cannot continue without LOG_LEVEL. "
 
@@ -399,10 +401,8 @@ info "$(echo -e "multiple lines example - line #1\nmultiple lines example - line
 channel=${arg_c}
 start_time=${arg_s}
 duration=${arg_l}
+data_dir=${arg_i}
 out_file_name=${arg_o}
-
-# configurations
-data_dir=data
 
 # local veriable
 end_time=$(( start_time + duration ))
@@ -412,5 +412,6 @@ concat_list="extract-list-$start_time-$duration.txt"
 awk -F ',' '($2 > '"$start_time"' && $2 < '"$end_time"'){print $4}' < "$data_dir/$channel-list.txt" | sed 's/^/file '"$data_dir"'\//' > "$concat_list"
 #ffmpeg -f concat -i "$concat_list" -f wav - | oggenc -q -1 -o "$out_file_name" -
 ffmpeg -f concat -i "$concat_list" -c copy "$out_file_name" #-bsf:a aac_adtstoasc 
+
 rm "$concat_list"
 
