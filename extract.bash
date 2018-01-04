@@ -359,6 +359,7 @@ fi
 if [[ "${arg_h:?}" = "1" ]]; then
   # Help exists with code 1
   help "Help using ${0}"
+  help "It supports output wav, mp3 and ts. The format is automatically detected from the output file name, default is ts."
 fi
 
 
@@ -408,10 +409,27 @@ out_file_name=${arg_o}
 end_time=$(( start_time + duration ))
 concat_list="extract-list-$start_time-$duration.txt"
 
+out_mp3=false
+out_wav=false
+if [[ "$out_file_name" == *.mp3 ]]; then
+    out_mp3=true
+fi
+if [[ "$out_file_name" == *.wav ]]; then
+    out_wav=true
+fi
 
 awk -F ',' '($2 > '"$start_time"' && $2 < '"$end_time"'){print $4}' < "$data_dir/$channel-list.txt" | sed 's/^/file '"$data_dir"'\//' > "$concat_list"
-#ffmpeg -f concat -i "$concat_list" -f wav - | oggenc -q -1 -o "$out_file_name" -
-ffmpeg -f concat -i "$concat_list" -c copy "$out_file_name" #-bsf:a aac_adtstoasc 
+if $out_wav; then
+    ffmpeg -f concat -i "$concat_list" -f wav "$out_file_name"
+elif $out_mp3; then
+    # see https://trac.ffmpeg.org/wiki/Encode/MP3 for codec related params
+    # qscale=5: 14M per hour
+    # qscale=9: 7.6M per hour
+    ffmpeg -f concat -i "$concat_list" -codec:a libmp3lame -qscale:a 5 "$out_file_name"
+else
+    #ffmpeg -f concat -i "$concat_list" -f wav - | oggenc -q -1 -o "$out_file_name" -
+    ffmpeg -f concat -i "$concat_list" -c copy "$out_file_name" #-bsf:a aac_adtstoasc 
+fi
 
 rm "$concat_list"
 
