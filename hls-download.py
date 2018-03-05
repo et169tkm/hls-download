@@ -149,7 +149,7 @@ def main(argv):
                     else:
                         download_filename = segment_file_path
     
-                    if "%s-%d.ts" % (name, segment.sequence_id) in list_of_downloaded_segment_files:
+                    if segment_filename in list_of_downloaded_segment_files:
                     #if os.path.isfile(segment_file_path) or os.path.isfile(encrypted_segment_file_path):
                         printlog("file exist, skip downloading: %s" % download_filename)
                     else:
