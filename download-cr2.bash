@@ -11,5 +11,6 @@ DATA_DIR='hls-segments'
 retain_limit=$(( 7 * 24 * 60 * 60 ))
 python hls-download.py -d "$DATA_DIR" --retain_limit $retain_limit "$NAME" "$URL"
 
-curl -X POST -H "Content-Type: application/json" --data '{"value1":"Desktop cr2 hls recording lost."}' https://maker.ifttt.com/trigger/status/with/key/fWLSOTcW4fvNScdUAjJYB537kOzXKyKp8EFV0FpcMD7
+ifttt_url=`cat private/ifttt_on_cr2_hls_doenload_ended_url.txt`
+curl -X POST -H "Content-Type: application/json" --data '{"value1":"Desktop cr2 hls recording lost."}' "$ifttt_url"
 
